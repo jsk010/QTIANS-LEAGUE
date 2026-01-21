@@ -53,7 +53,7 @@ const Footer: React.FC = () => (
           <i className="fa-solid fa-globe"></i>
         </a>
       </div>
-      <p className="text-xs uppercase tracking-widest">Copyright &copy; 2025 Ansan Dongsan Church. All Rights Reserved.</p>
+      <p className="text-xs uppercase tracking-widest">Copyright &copy; 2026 Ansan Dongsan Church. All Rights Reserved.</p>
     </div>
   </footer>
 );
