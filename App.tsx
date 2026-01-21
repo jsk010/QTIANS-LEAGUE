@@ -7,7 +7,7 @@ import { BibleEntry } from './types';
 const PRIMARY_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwfPZ3rSvJihXJP8dwu7ZiV-vEZWYlzTkIMb3jxeaI-GouNVBwvzUrGWFbP4kt1lYNf/exec';
 
 // 백업용 제2 스프레드시트 URL (새로 만든 시트의 URL)
-const BACKUP_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxFBDC961euYsrpS_gl0ULrjItmBEZ30wLR-ejcGjcOfBoBvLTvLJRkjJqGklYU1-Gp/exec'; 
+const BACKUP_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxPOG9fi1edLvDh7hiG8ilfiGjpoJG3YKgY99l3HeP57IZ2gxkS--Q__G3758lGOECi/exec'; 
 
 const App: React.FC = () => {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
