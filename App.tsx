@@ -114,16 +114,6 @@ const App: React.FC = () => {
     }
   };
 
-  const downloadBackup = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(history, null, 2));
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", `qt_backup_${new Date().toISOString().split('T')[0]}.json`);
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
-  };
-
   return (
     <Layout>
       <div className="max-w-2xl mx-auto px-6 py-12 space-y-12">
@@ -238,45 +228,6 @@ const App: React.FC = () => {
             </button>
           </form>
         </div>
-
-        {history.length > 0 && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center px-4">
-              <h4 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                <i className="fa-solid fa-clock-rotate-left text-blue-600 text-sm"></i>
-                최근 나의 기록
-              </h4>
-              <button 
-                onClick={downloadBackup}
-                className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-blue-600 transition-colors flex items-center gap-1 group"
-              >
-                <i className="fa-solid fa-download group-hover:bounce"></i>
-                파일로 내보내기
-              </button>
-            </div>
-            
-            <div className="grid gap-4">
-              {history.map((entry) => (
-                <div key={entry.id} className="bg-white border border-slate-100 p-6 rounded-[2rem] shadow-sm hover:shadow-md transition-all group border-l-4 border-l-transparent hover:border-l-blue-500">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex items-center gap-3">
-                      <span className="bg-blue-50 text-blue-600 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider">
-                        {entry.date}
-                      </span>
-                      <span className="text-slate-900 font-bold text-sm">{entry.name}</span>
-                    </div>
-                    <span className="text-[10px] text-slate-300 font-medium italic">
-                      {new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-                  <p className="text-slate-600 text-sm line-clamp-3 group-hover:line-clamp-none transition-all duration-500 leading-relaxed whitespace-pre-wrap font-medium">
-                    {entry.scripture}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         <div className="pt-8 text-center">
           <p className="text-slate-300 text-[9px] font-black uppercase tracking-[0.3em] flex items-center justify-center gap-4">
