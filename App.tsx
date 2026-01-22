@@ -9,22 +9,6 @@ const PRIMARY_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwfPZ3rSvJih
 // 백업용 제2 스프레드시트 URL
 const BACKUP_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxPOG9fi1edLvDh7hiG8ilfiGjpoJG3YKgY99l3HeP57IZ2gxkS--Q__G3758lGOECi/exec'; 
 
-/**
- * 날짜 형식을 YYYY-MM-DD로 통일하는 유틸리티
- */
-const normalizeDate = (dateStr: string) => {
-  if (!dateStr) return '';
-  // 숫자만 추출해서 -로 연결 (예: 2026. 01. 22 -> 2026-01-22)
-  const nums = dateStr.match(/\d+/g);
-  if (nums && nums.length >= 3) {
-    const y = nums[0];
-    const m = nums[1].padStart(2, '0');
-    const d = nums[2].padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
-  return dateStr.trim();
-};
-
 const App: React.FC = () => {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [name, setName] = useState('');
@@ -33,44 +17,19 @@ const App: React.FC = () => {
   const [scripture, setScripture] = useState('');
   
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [success, setSuccess] = useState(false);
   const [backupStatus, setBackupStatus] = useState<'idle' | 'syncing' | 'done'>('idle');
   const [history, setHistory] = useState<BibleEntry[]>([]);
 
-  // DB에서 전체 데이터 가져오기
-  const fetchHistory = async () => {
-    setIsSyncing(true);
-    try {
-      // 캐시 방지를 위해 타임스탬프 쿼리 추가
-      const response = await fetch(`${PRIMARY_SCRIPT_URL}?t=${Date.now()}`);
-      if (response.ok) {
-        const data = await response.json();
-        if (Array.isArray(data)) {
-          // 서버 데이터의 날짜와 문자열을 정규화하여 저장
-          const normalizedData = data.map(entry => ({
-            ...entry,
-            date: normalizeDate(entry.date),
-            chapel: entry.chapel?.trim() || '',
-            village: entry.village?.trim() || ''
-          }));
-          setHistory(normalizedData);
-          localStorage.setItem('qt_history', JSON.stringify(normalizedData));
-        }
-      }
-    } catch (err) {
-      console.warn("DB 동기화 실패 (로컬 데이터 사용):", err);
-      const savedHistory = localStorage.getItem('qt_history');
-      if (savedHistory) {
-        setHistory(JSON.parse(savedHistory));
-      }
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   useEffect(() => {
-    fetchHistory();
+    const savedHistory = localStorage.getItem('qt_history');
+    if (savedHistory) {
+      try {
+        setHistory(JSON.parse(savedHistory));
+      } catch (e) {
+        console.error("Failed to parse history", e);
+      }
+    }
     
     const lastInfo = localStorage.getItem('qt_last_info');
     if (lastInfo) {
@@ -85,10 +44,9 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // 상세 통계 계산
+  // 상세 통계 계산 (예배당 + 마을 조합)
   const detailedStats = useMemo(() => {
-    const targetDate = normalizeDate(date);
-    const filtered = history.filter(entry => normalizeDate(entry.date) === targetDate);
+    const filtered = history.filter(entry => entry.date === date);
     
     const chapels = ["본당 중등부", "본당 고등부", "학교 중등부", "학교 고등부"];
     const villages = ["1마을", "2마을", "3마을"];
@@ -103,10 +61,8 @@ const App: React.FC = () => {
     });
 
     filtered.forEach(entry => {
-      const c = entry.chapel;
-      const v = entry.village;
-      if (result[c] && result[c][v] !== undefined) {
-        result[c][v]++;
+      if (result[entry.chapel] && result[entry.chapel][entry.village] !== undefined) {
+        result[entry.chapel][entry.village]++;
       }
     });
 
@@ -123,13 +79,18 @@ const App: React.FC = () => {
       });
       return true;
     } catch (err) {
+      console.error(`Failed to send to ${url}`, err);
       return false;
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmitting) return;
+    
+    if (!PRIMARY_SCRIPT_URL || (!PRIMARY_SCRIPT_URL.includes('AKfycb') && !PRIMARY_SCRIPT_URL.includes('https'))) {
+      alert("스프레드시트 URL 설정을 확인해주세요.");
+      return;
+    }
 
     setIsSubmitting(true);
     setBackupStatus('syncing');
@@ -141,19 +102,31 @@ const App: React.FC = () => {
     params.append('village', village);
     params.append('scripture', scripture);
 
+    const newEntry: BibleEntry = {
+      id: Math.random().toString(36).substr(2, 9),
+      date,
+      name,
+      chapel,
+      village,
+      scripture,
+      timestamp: Date.now()
+    };
+
     try {
       const primaryTask = sendToSheet(PRIMARY_SCRIPT_URL, params);
+      
       let backupTask = Promise.resolve(true);
-      if (BACKUP_SCRIPT_URL && BACKUP_SCRIPT_URL.startsWith('https')) {
+      if (BACKUP_SCRIPT_URL && !BACKUP_SCRIPT_URL.includes('Your_New_Backup_URL')) {
         backupTask = sendToSheet(BACKUP_SCRIPT_URL, params);
       }
 
       await Promise.all([primaryTask, backupTask]);
       
-      // 전송 성공 후 즉시 DB 리프레시
-      await fetchHistory();
-      
+      const updatedHistory = [newEntry, ...history].slice(0, 50);
+      setHistory(updatedHistory);
+      localStorage.setItem('qt_history', JSON.stringify(updatedHistory));
       localStorage.setItem('qt_last_info', JSON.stringify({ name, chapel, village }));
+
       setSuccess(true);
       setBackupStatus('done');
       setScripture('');
@@ -163,12 +136,14 @@ const App: React.FC = () => {
         setBackupStatus('idle');
       }, 5000);
     } catch (err) {
-      alert("전송 중 문제가 발생했습니다.");
+      console.error("Submission Error:", err);
+      alert("전송 중 문제가 발생했습니다. 네트워크 상태를 확인하세요.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // 마을별 고정 색상
   const villageColors: Record<string, string> = {
     "1마을": "bg-blue-500",
     "2마을": "bg-emerald-500",
@@ -181,7 +156,7 @@ const App: React.FC = () => {
         
         {/* 입력 폼 섹션 */}
         <div className="bg-white rounded-[2.5rem] shadow-2xl shadow-blue-900/5 p-8 md:p-12 border border-slate-100 transition-all relative overflow-hidden">
-          {(isSubmitting || isSyncing) && (
+          {isSubmitting && (
             <div className="absolute top-0 left-0 w-full h-1 bg-slate-100 overflow-hidden">
               <div className="h-full bg-blue-600 animate-[progress_2s_ease-in-out_infinite] origin-left w-1/2"></div>
             </div>
@@ -190,17 +165,17 @@ const App: React.FC = () => {
           <div className="flex justify-between items-start mb-10">
             <div>
               <h3 className="text-3xl font-black text-slate-900 tracking-tight">성경 읽기 기록</h3>
-              {(backupStatus === 'syncing' || isSyncing) && (
+              {backupStatus === 'syncing' && (
                 <div className="flex items-center gap-2 mt-2">
-                  <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
-                  <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em]">Synchronizing DB...</p>
+                  <div className="w-2 h-2 rounded-full bg-yellow-400 animate-ping"></div>
+                  <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em]">Cloud Syncing...</p>
                 </div>
               )}
             </div>
             {success && (
               <div className="bg-green-50 text-green-600 px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-wider flex items-center gap-2 animate-bounce">
                 <i className="fa-solid fa-check-double"></i>
-                서버 저장 완료
+                완전 저장됨
               </div>
             )}
           </div>
@@ -286,7 +261,7 @@ const App: React.FC = () => {
               {isSubmitting ? (
                 <>
                   <i className="fa-solid fa-spinner animate-spin"></i>
-                  저장 중...
+                  데이터 저장 중...
                 </>
               ) : (
                 <>
@@ -298,30 +273,28 @@ const App: React.FC = () => {
           </form>
         </div>
 
-        {/* 인포그래픽 섹션 */}
+        {/* 인포그래픽 섹션 - 세분화 버전 */}
         <div className="bg-slate-900 rounded-[2.5rem] p-8 md:p-12 shadow-2xl shadow-slate-900/20 text-white space-y-12">
           <div className="flex items-center justify-between border-b border-slate-800 pb-8">
             <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <h4 className="text-xl md:text-3xl font-black tracking-tight whitespace-nowrap">오늘의 QT 현황</h4>
-                {isSyncing && <i className="fa-solid fa-rotate animate-spin text-blue-500 text-sm"></i>}
-              </div>
+              <h4 className="text-3xl font-black tracking-tight">{date} 리얼타임 현황</h4>
               <p className="text-slate-400 text-xs font-bold uppercase tracking-widest flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-                DETAILED QT STATS (LIVE)
+                Detailed Participation Stats
               </p>
             </div>
             <div className="text-right">
               <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-1">Total Records</p>
               <div className="flex items-baseline gap-1 justify-end">
-                <span className="text-4xl md:text-5xl font-black text-white">{detailedStats.total}</span>
-                <span className="text-blue-500 text-sm font-bold ml-1">건</span>
+                <span className="text-5xl font-black text-white">{detailedStats.total}</span>
+                <span className="text-blue-500 text-sm font-bold">건</span>
               </div>
             </div>
           </div>
 
           <div className="grid md:grid-cols-2 gap-8">
             {Object.entries(detailedStats.data).map(([chapelName, villageData]) => {
+              // 해당 예배당의 총 합계
               const chapelTotal = Object.values(villageData).reduce((a, b) => a + b, 0);
 
               return (
@@ -335,7 +308,8 @@ const App: React.FC = () => {
 
                   <div className="space-y-5">
                     {Object.entries(villageData).map(([vName, count]) => {
-                      const percentage = chapelTotal > 0 ? (count / chapelTotal) * 100 : 0;
+                      // 전체 대비 비율 (바 너비용)
+                      const percentage = detailedStats.total > 0 ? (count / detailedStats.total) * 100 : 0;
                       
                       return (
                         <div key={vName} className="space-y-2">
@@ -348,8 +322,8 @@ const App: React.FC = () => {
                           </div>
                           <div className="h-2.5 bg-slate-900 rounded-full overflow-hidden flex">
                             <div 
-                              className={`${villageColors[vName]} h-full transition-all duration-1000 ease-out rounded-full shadow-[0_0_10px_rgba(59,130,246,0.2)]`}
-                              style={{ width: `${count > 0 ? Math.max(percentage, 5) : 0}%` }}
+                              className={`${villageColors[vName]} h-full transition-all duration-1000 ease-out rounded-full shadow-[0_0_10px_rgba(59,130,246,0.3)]`}
+                              style={{ width: `${count > 0 ? Math.max(percentage, 8) : 0}%` }}
                             ></div>
                           </div>
                         </div>
@@ -360,12 +334,6 @@ const App: React.FC = () => {
               );
             })}
           </div>
-
-          {detailedStats.total === 0 && !isSyncing && (
-            <div className="text-center py-10">
-              <p className="text-slate-500 font-bold italic">해당 날짜에 기록된 데이터가 없습니다.</p>
-            </div>
-          )}
           
           <div className="pt-4 flex flex-wrap gap-6 justify-center">
             {["1마을", "2마을", "3마을"].map(v => (
@@ -374,17 +342,6 @@ const App: React.FC = () => {
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{v}</span>
               </div>
             ))}
-          </div>
-
-          <div className="text-center">
-            <button 
-              onClick={fetchHistory}
-              disabled={isSyncing}
-              className="group text-[10px] text-slate-500 hover:text-blue-400 transition-colors font-bold uppercase tracking-[0.2em] flex items-center gap-2 mx-auto px-4 py-2 bg-slate-800/20 rounded-full"
-            >
-              <i className={`fa-solid fa-arrows-rotate ${isSyncing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`}></i>
-              Manual DB Refresh
-            </button>
           </div>
         </div>
 
